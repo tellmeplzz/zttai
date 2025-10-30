@@ -1,0 +1,14 @@
+[
+  {
+    "device_id": "pump-01",
+    "timestamp": "2024-05-01 08:00:00",
+    "metrics": {"pressure": 2.3, "temperature": 45.2},
+    "alerts": ["温度接近上限", "震动轻微异常"]
+  },
+  {
+    "device_id": "motor-02",
+    "timestamp": "2024-05-01 08:05:00",
+    "metrics": {"current": 12.5, "rpm": 1480},
+    "alerts": ["电流波动"]
+  }
+]
