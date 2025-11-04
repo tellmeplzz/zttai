@@ -10,9 +10,21 @@
 
 - 📄 **OCR 文档管理**：批量上传 PDF/图片，使用 PaddleOCR 或 Tesseract 识别，自动切块并写入 SQLite + Chroma。
 - 🛠️ **运维助手 Agent**：结合会话记忆与知识库的 RAG 问答，支持反馈闭环（点赞/点踩、是否解决）。
-- 🧑‍🏭 **人机协同标注**：模拟小模型异常信号入队，提供责任人、异常类型、多选原因等表单，支持导出 CSV。
+- 🧑‍🏭 **人机协同标注**：实时监听小模型二分类输出，告警样本进入“待标注 → 待审核 → 已归档”流程，可下载原始片段并导出 CSV。
 - 🤖 **数智人播报**：悬浮语音助手，可选择 edge-tts / pyttsx3 播报最新回复。
 - 🔀 **智能路由**：自然语言意图识别，自动切换到对应智能体工作流。
+
+---
+
+## 标注工作台流程说明
+
+1. **信号监听**：`MonitorService.stream_signal` 模拟小模型输出概率，当概率超过阈值即视为异常。
+2. **异常入队**：异常片段会生成波形缩略图与原始 CSV，文件保存在 `data/monitor_artifacts/`，同时写入 `hit_queue` 表并标记状态为“待标注”。
+3. **人工标注**：在 Streamlit 页面填写责任人、异常类型、原因等信息，并选择“待审核”或“已归档”状态。
+4. **复核记录**：若填写复核人则会记录复核时间，所有操作都会同步到 SQLite 的 `annotations` 表，可随时导出 CSV。
+5. **档案管理**：通过队列筛选查看不同状态的数据，完成后的样本可一键下载原始片段或清空目录。
+
+> 若接入真实小模型，仅需在 `MonitorService` 中替换 `stream_signal` 的数据来源与判定逻辑。
 
 ---
 
@@ -50,7 +62,8 @@
 ├── data/
 │   ├── docs/设备维护手册_示例.pdf
 │   ├── telemetry_samples.json
-│   └── signals/sample1.csv
+│   ├── signals/sample1.csv
+│   └── monitor_artifacts/README.md   # 运行后生成缩略图与片段的说明
 ├── tests/smoke_test.py             # 冒烟测试
 └── requirements.txt
 ```

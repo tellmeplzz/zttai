@@ -282,23 +282,50 @@ elif current_agent == "🛠️ 运维助手":
 
 elif current_agent == "🧑‍🏭 标注工作台":
     st.title("🧑‍🏭 标注工作台")
-    st.caption("监控小模型输出，异常片段将自动入队等待人工确认。")
-    if st.button("运行一次异常检测"):
-        hit_id = monitor_service.run_mock_task()
-        if hit_id:
-            st.success(f"已生成异常样本，记录 ID: {hit_id}")
-        else:
-            st.info("未检测到异常样本。")
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM hit_queue ORDER BY created_at DESC LIMIT 20")
-    hits = [dict(row) for row in cursor.fetchall()]
+    st.caption("监控小模型输出，异常片段将自动入队等待人工确认与复核。")
+    col_run, col_stream = st.columns(2)
+    threshold = st.slider("触发阈值", 0.1, 1.0, 0.7, step=0.05)
+    model_version = st.selectbox("小模型版本", ["demo-small-v1", "demo-small-v2"], index=0)
+    with col_run:
+        if st.button("运行一次快速检测"):
+            hit_id = monitor_service.run_mock_task(threshold=threshold, model_version=model_version)
+            if hit_id:
+                st.success(f"已生成异常样本，记录 ID: {hit_id}")
+            else:
+                st.info("未检测到异常样本。")
+    with col_stream:
+        if st.button("遍历整段信号并记录首个告警"):
+            hit_id = monitor_service.record_stream_once(threshold=threshold, model_version=model_version)
+            if hit_id:
+                st.success(f"整段扫描完成，首个告警 ID: {hit_id}")
+            else:
+                st.info("未找到高于阈值的点。")
+    status_filter = st.multiselect(
+        "队列状态筛选",
+        options=["待标注", "待审核", "已归档"],
+        default=["待标注", "待审核"],
+    )
+    hits = monitor_service.fetch_queue(status_filter or None)
     for hit in hits:
         with st.expander(
-            f"异常样本 {hit['id']} | 时间窗 {hit['window_start']:.2f}-{hit['window_end']:.2f}s | 评分 {hit['score']:.2f}"
+            f"异常样本 {hit['id']} | 模型 {hit.get('model_version', '未知')} | 状态 {hit.get('status', '待标注')}"
         ):
-            if Path(hit["sample_path"]).exists():
+            st.markdown(
+                f"**时间窗：** {hit['window_start']:.2f}s ~ {hit['window_end']:.2f}s  \
+                **预测概率：** {hit['score']:.2f}  \
+                **当前状态：** {hit.get('status', '待标注')}"
+            )
+            if Path(hit.get("sample_path", "")).exists():
                 st.image(hit["sample_path"], caption="波形缩略图")
+            if Path(hit.get("raw_path", "")).exists():
+                with open(hit["raw_path"], "r", encoding="utf-8") as fh:
+                    raw_csv = fh.read()
+                st.download_button("下载原始片段 CSV", raw_csv, file_name=Path(hit["raw_path"]).name)
+            payload = json.loads(hit.get("payload_json") or "{}")
+            if payload:
+                st.json(payload)
             owner = st.text_input("责任人", key=f"owner_{hit['id']}")
+            reviewer = st.text_input("复核人", key=f"reviewer_{hit['id']}")
             label = st.selectbox(
                 "异常类型",
                 ["机械振动", "电气噪声", "工况切换", "传感器故障", "其他"],
@@ -310,23 +337,28 @@ elif current_agent == "🧑‍🏭 标注工作台":
                 key=f"reason_{hit['id']}",
             )
             note = st.text_area("备注", key=f"note_{hit['id']}")
+            status_choice = st.selectbox(
+                "处理状态",
+                ["待审核", "已归档"],
+                key=f"status_{hit['id']}",
+            )
             if st.button("提交标注", key=f"submit_{hit['id']}"):
-                cursor.execute(
-                    "INSERT INTO annotations(sample_path, label, reasons, note, owner, created_at) VALUES(?, ?, ?, ?, ?, datetime('now'))",
-                    (
-                        hit["sample_path"],
-                        label,
-                        ",".join(reasons),
-                        note,
-                        owner,
-                    ),
+                annotation_id = monitor_service.save_annotation(
+                    hit_id=int(hit["id"]),
+                    sample_path=hit.get("sample_path", ""),
+                    label=label,
+                    reasons=list(reasons),
+                    note=note,
+                    owner=owner,
+                    status=status_choice,
+                    reviewer=reviewer,
                 )
-                conn.commit()
-                st.success("标注已保存")
+                st.success(f"标注已保存，记录 ID: {annotation_id}")
     if st.button("导出标注 CSV"):
+        cursor = conn.cursor()
         cursor.execute("SELECT * FROM annotations ORDER BY created_at DESC")
         rows = cursor.fetchall()
-        csv_lines = ["id,sample_path,label,reasons,note,owner,created_at"]
+        csv_lines = ["id,sample_path,label,reasons,note,owner,status,reviewed_by,reviewed_at,created_at"]
         for row in rows:
             csv_lines.append(
                 ",".join(
@@ -337,6 +369,9 @@ elif current_agent == "🧑‍🏭 标注工作台":
                         row["reasons"] or "",
                         row["note"] or "",
                         row["owner"] or "",
+                        row["status"] or "",
+                        row["reviewed_by"] or "",
+                        row["reviewed_at"] or "",
                         row["created_at"] or "",
                     ]
                 )

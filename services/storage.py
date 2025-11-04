@@ -18,6 +18,18 @@ def get_connection(db_path: str) -> sqlite3.Connection:
     return conn
 
 
+def ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    """确保给定数据表存在指定列。"""
+
+    cursor = conn.cursor()
+    cursor.execute(f"PRAGMA table_info({table})")
+    columns = {row["name"] for row in cursor.fetchall()}
+    if column not in columns:
+        logger.info("为数据表 %s 增加缺失字段 %s", table, column)
+        cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        conn.commit()
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     logger.info("初始化 SQLite 数据表")
     cursor = conn.cursor()
@@ -73,6 +85,15 @@ def init_db(conn: sqlite3.Connection) -> None:
         """
     )
     conn.commit()
+    # 表结构向后兼容升级
+    ensure_column(conn, "hit_queue", "model_version", "TEXT")
+    ensure_column(conn, "hit_queue", "predicted_label", "INTEGER DEFAULT 1")
+    ensure_column(conn, "hit_queue", "status", "TEXT DEFAULT '待标注'")
+    ensure_column(conn, "hit_queue", "raw_path", "TEXT")
+    ensure_column(conn, "hit_queue", "payload_json", "TEXT")
+    ensure_column(conn, "annotations", "status", "TEXT DEFAULT '待审核'")
+    ensure_column(conn, "annotations", "reviewed_by", "TEXT")
+    ensure_column(conn, "annotations", "reviewed_at", "TEXT")
 
 
 def insert_json(cursor: sqlite3.Cursor, table: str, data: dict) -> int:

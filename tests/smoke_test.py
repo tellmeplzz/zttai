@@ -65,3 +65,17 @@ def test_end_to_end_smoke(tmp_path):
     monitor = MonitorService(conn)
     hit_id = monitor.run_mock_task()
     assert hit_id is None or hit_id > 0
+    if hit_id:
+        queue = monitor.fetch_queue(["待标注"], limit=5)
+        target = next(item for item in queue if item["id"] == hit_id)
+        saved_id = monitor.save_annotation(
+            hit_id=hit_id,
+            sample_path=target["sample_path"],
+            label="机械振动",
+            reasons=["轴承磨损"],
+            note="自动化测试",
+            owner="tester",
+            status="待审核",
+            reviewer="qa",
+        )
+        assert saved_id > 0

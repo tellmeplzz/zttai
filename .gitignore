@@ -1,3 +1,6 @@
 assets/generated/
 data/thumbnails/
+data/monitor_artifacts/*
+!data/monitor_artifacts/
+!data/monitor_artifacts/README.md
 **/__pycache__/
