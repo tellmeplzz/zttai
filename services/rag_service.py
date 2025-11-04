@@ -40,6 +40,11 @@ class RagService:
                     from langchain_community.embeddings import FakeEmbeddings  # type: ignore
 
                     self._embeddings = FakeEmbeddings(size=768)
+            elif self.embedding_config.provider == "fake":
+                from langchain_community.embeddings import FakeEmbeddings  # type: ignore
+
+                logger.info("使用 FakeEmbeddings 作为轻量嵌入实现")
+                self._embeddings = FakeEmbeddings(size=256)
             else:
                 raise ValueError("暂不支持的嵌入模型提供方")
         return self._embeddings
@@ -75,6 +80,10 @@ class RagService:
             if score <= score_threshold:
                 doc.metadata["score"] = score
                 docs.append(doc)
+        if not docs and results:
+            best_doc, best_score = results[0]
+            best_doc.metadata["score"] = best_score
+            docs.append(best_doc)
         return docs
 
     @staticmethod

@@ -7,14 +7,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List
 
-import fitz  # type: ignore
+try:  # pragma: no cover - 测试环境可能缺少 PyMuPDF
+    import fitz  # type: ignore
+except Exception:  # pragma: no cover
+    fitz = None  # type: ignore
+
+try:  # pragma: no cover - 轻量 PDF 文本读取
+    from pypdf import PdfReader  # type: ignore
+except Exception:  # pragma: no cover
+    PdfReader = None  # type: ignore
 
 logger = logging.getLogger(__name__)
-
-try:  # pragma: no cover - 依赖大
-    from paddleocr import PaddleOCR  # type: ignore
-except Exception:  # pragma: no cover
-    PaddleOCR = None  # type: ignore
 
 try:  # pragma: no cover
     import pytesseract  # type: ignore
@@ -38,12 +41,13 @@ class OcrService:
         self.use_gpu = use_gpu
         self.fallback = fallback
         self._paddle = None
-        if PaddleOCR is not None:
+        try:  # pragma: no cover - PaddleOCR 依赖较多
+            from paddleocr import PaddleOCR  # type: ignore
+
             logger.info("初始化 PaddleOCR use_gpu=%s", use_gpu)
-            try:
-                self._paddle = PaddleOCR(use_angle_cls=True, lang="ch", use_gpu=use_gpu)
-            except Exception as exc:  # pragma: no cover
-                logger.warning("PaddleOCR 初始化失败，将使用 fallback: %s", exc)
+            self._paddle = PaddleOCR(use_angle_cls=True, lang="ch", use_gpu=use_gpu)
+        except Exception as exc:  # pragma: no cover
+            logger.warning("PaddleOCR 不可用，将使用 fallback: %s", exc)
 
     def _paddle_ocr(self, image_path: str) -> List[OcrBlock]:
         assert self._paddle is not None
@@ -68,6 +72,8 @@ class OcrService:
         return blocks
 
     def _pdf_to_images(self, pdf_path: str) -> Iterable[Path]:
+        if fitz is None:  # pragma: no cover - 取决于外部依赖
+            raise RuntimeError("PyMuPDF 未安装，无法将 PDF 渲染为图片")
         doc = fitz.open(pdf_path)
         output_dir = Path("data/tmp/pdf")
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -83,8 +89,11 @@ class OcrService:
         path = Path(file_path)
         blocks: List[OcrBlock] = []
         if path.suffix.lower() == ".pdf":
-            for page_index, image_path in enumerate(self._pdf_to_images(file_path)):
-                blocks.extend(self._recognize_image(str(image_path), page_index))
+            if fitz is None:
+                blocks.extend(self._extract_pdf_text(path))
+            else:
+                for page_index, image_path in enumerate(self._pdf_to_images(file_path)):
+                    blocks.extend(self._recognize_image(str(image_path), page_index))
         else:
             blocks.extend(self._recognize_image(file_path, 0))
         return blocks
@@ -101,6 +110,19 @@ class OcrService:
         for block in result:
             block.page = page_index
         return result
+
+    def _extract_pdf_text(self, pdf_path: Path) -> List[OcrBlock]:
+        logger.info("直接读取 PDF 文本: %s", pdf_path)
+        blocks: List[OcrBlock] = []
+        if PdfReader is None:
+            logger.warning("缺少 pypdf 依赖，返回空结果。")
+            return blocks
+        reader = PdfReader(str(pdf_path))
+        for page_index, page in enumerate(reader.pages):
+            text = page.extract_text() or ""
+            if text:
+                blocks.append(OcrBlock(page=page_index, bbox=[0, 0, 0, 0], text=text))
+        return blocks
 
 
 __all__ = ["OcrService", "OcrBlock"]

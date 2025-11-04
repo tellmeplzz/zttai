@@ -76,6 +76,7 @@ pip install -r requirements.txt
   - macOS：`brew install tesseract`
   - Ubuntu/Debian：`sudo apt-get install tesseract-ocr`
   - Windows：下载官方安装包并将安装路径加入 `PATH`
+- **PDF 解析**：推荐安装 `pymupdf` 获得更快的页面渲染；若缺失会自动回退到纯 Python 的 `pypdf` 提取文本。
 - 若以上都未安装，系统会尝试使用 PDF 文本抽取作为兜底。
 
 ### 3. Sentence-Transformers 模型下载
@@ -122,9 +123,11 @@ streamlit run streamlit_app.py
    - 在无网络环境下，系统会自动退化为 `FakeEmbeddings`，可用于功能演示但相似度较弱。
 3. **中文 OCR 识别不准？**
    - PaddleOCR 支持 GPU 加速与中英文混排，建议启用；Tesseract 可通过自定义语言包 `chi_sim`、增大 DPI 改善效果。
-4. **TTS 无法播放？**
+4. **PyMuPDF 未安装如何处理？**
+   - `requirements.txt` 已包含 `pypdf`，即使缺少 PyMuPDF 也能完成文本索引；如需 PDF 转图片 OCR，请根据提示额外安装 `pymupdf`。
+5. **TTS 无法播放？**
    - `pyttsx3` 依赖系统语音引擎，Linux 需安装 `espeak`；edge-tts 需网络访问微软服务。
-5. **向量库体积增长？**
+6. **向量库体积增长？**
    - 定期清理 `data/vector_store` 并重新索引；支持切换为 FAISS/其他向量库，可在 `config/settings.py` 扩展。
 
 ---

@@ -12,6 +12,11 @@ try:
 except Exception:  # pragma: no cover - Streamlit 不一定在测试中可用
     st = None  # type: ignore
 
+try:  # pragma: no cover - 仅在运行期可用
+    from streamlit.errors import StreamlitSecretNotFoundError
+except Exception:  # pragma: no cover
+    StreamlitSecretNotFoundError = Exception  # type: ignore[misc,assignment]
+
 
 @dataclass
 class LLMConfig:
@@ -78,8 +83,15 @@ SECRET_KEYS = {
 
 
 def _get_secret(key: str, default: Any) -> Any:
-    if st is not None and hasattr(st, "secrets") and key in st.secrets:
-        return st.secrets[key]
+    if st is not None and hasattr(st, "secrets"):
+        try:
+            secrets_obj = st.secrets
+            if key in secrets_obj:
+                return secrets_obj[key]
+        except StreamlitSecretNotFoundError:
+            pass
+        except Exception:  # pragma: no cover - 保护性容错
+            pass
     return os.getenv(key, default)
 
 
@@ -90,9 +102,14 @@ def load_app_config() -> AppConfig:
     secrets = {k: _get_secret(k, v) for k, v in SECRET_KEYS.items()}
     extra = {}
     if st is not None and hasattr(st, "secrets"):
-        for key, value in st.secrets.items():
-            if key not in secrets:
-                extra[key] = value
+        try:
+            for key, value in st.secrets.items():
+                if key not in secrets:
+                    extra[key] = value
+        except StreamlitSecretNotFoundError:
+            pass
+        except Exception:  # pragma: no cover
+            pass
 
     llm = LLMConfig(
         provider=str(secrets["LLM_PROVIDER"]).upper(),

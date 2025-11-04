@@ -1,8 +1,21 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
-import fitz  # type: ignore
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+try:  # pragma: no cover - 依赖可选
+    import fitz  # type: ignore
+except Exception:  # pragma: no cover
+    fitz = None  # type: ignore
+
+try:  # pragma: no cover - 轻量文本解析
+    from pypdf import PdfReader  # type: ignore
+except Exception:  # pragma: no cover
+    PdfReader = None  # type: ignore
 
 from agents import OpsAgent, load_llm
 from config.settings import load_app_config
@@ -11,6 +24,8 @@ from services import MonitorService, RagService, add_message, get_or_create_sess
 
 def test_end_to_end_smoke(tmp_path):
     config = load_app_config()
+    config.embedding.provider = "fake"
+    config.llm.provider = "DEMO"
     db_path = tmp_path / "test.db"
     conn = storage.get_connection(str(db_path))
     storage.init_db(conn)
@@ -20,13 +35,23 @@ def test_end_to_end_smoke(tmp_path):
     Path(rag.vector_config.persist_path).mkdir(parents=True, exist_ok=True)
 
     pdf_path = Path("data/docs/设备维护手册_示例.pdf")
-    doc = fitz.open(str(pdf_path))
-    texts = []
-    metadatas = []
-    for page_index, page in enumerate(doc):
-        for chunk in RagService.split_text(page.get_text()):
-            texts.append(chunk)
-            metadatas.append({"source": pdf_path.name, "page": page_index + 1})
+    texts: list[str] = []
+    metadatas: list[dict] = []
+    if fitz is not None:
+        doc = fitz.open(str(pdf_path))
+        for page_index, page in enumerate(doc):
+            for chunk in RagService.split_text(page.get_text("text")):
+                texts.append(chunk)
+                metadatas.append({"source": pdf_path.name, "page": page_index + 1})
+    elif PdfReader is not None:
+        reader = PdfReader(str(pdf_path))
+        for page_index, page in enumerate(reader.pages):
+            page_text = page.extract_text() or ""
+            for chunk in RagService.split_text(page_text):
+                texts.append(chunk)
+                metadatas.append({"source": pdf_path.name, "page": page_index + 1})
+    else:  # pragma: no cover - 运行环境极端缺失
+        raise RuntimeError("缺少 PDF 解析依赖，请安装 pymupdf 或 pypdf")
     rag.index_documents("test_doc", texts, metadatas)
 
     llm = load_llm(config.llm.provider, config.llm.model)

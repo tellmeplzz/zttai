@@ -6,7 +6,6 @@ import logging
 import sqlite3
 from typing import Dict, List
 
-from langchain.memory import ConversationBufferMemory
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.language_models import BaseLanguageModel
 
@@ -42,7 +41,6 @@ class OpsAgent:
         self.llm = llm
         self.rag = rag
         self.conn = conn
-        self.memory = ConversationBufferMemory(memory_key="history", return_messages=True)
 
     def build_context(self, docs: List) -> str:
         parts = []

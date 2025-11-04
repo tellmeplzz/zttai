@@ -6,6 +6,8 @@ import struct
 import zlib
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 _BASE_DIR = Path(__file__).resolve().parent
 _GENERATED_DIR = _BASE_DIR / "generated"
 _ASSETS = {
@@ -128,12 +130,12 @@ def ensure_assets(force: bool = False) -> None:
     logo = _ASSETS["logo"]
 
     if force or not background.exists() or not background.read_bytes().startswith(PNG_SIGNATURE):
-        logging.info("生成占位背景图 %s", background.name)
+        logger.info("生成占位背景图 %s", background.name)
         pixels = _generate_background()
         _write_png(background, len(pixels[0]), len(pixels), pixels)
 
     if force or not logo.exists() or not logo.read_bytes().startswith(PNG_SIGNATURE):
-        logging.info("生成占位 Logo %s", logo.name)
+        logger.info("生成占位 Logo %s", logo.name)
         pixels = _generate_logo()
         _write_png(logo, len(pixels[0]), len(pixels), pixels)
 

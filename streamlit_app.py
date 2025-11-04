@@ -4,9 +4,19 @@ import asyncio
 import json
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 from typing import List
 
-import fitz  # type: ignore
+try:  # pragma: no cover - 运行环境可能缺少 PyMuPDF
+    import fitz  # type: ignore
+except Exception:  # pragma: no cover
+    fitz = None  # type: ignore
+
+try:  # pragma: no cover - 作为 PDF 文本提取备选
+    from pypdf import PdfReader  # type: ignore
+except Exception:  # pragma: no cover
+    PdfReader = None  # type: ignore
+
 import streamlit as st
 
 from agents import OpsAgent, load_llm
@@ -75,6 +85,23 @@ uploads_dir = Path("data/uploads")
 uploads_dir.mkdir(parents=True, exist_ok=True)
 
 
+def _extract_pdf_pages(file_path: str) -> list[str]:
+    """从 PDF 中提取每页文本，支持 PyMuPDF 或 PyPDF."""
+    texts: list[str] = []
+    if fitz is not None:  # pragma: no cover - 依赖外部库
+        doc = fitz.open(file_path)  # type: ignore[arg-type]
+        for page in doc:
+            texts.append(page.get_text("text"))
+        return texts
+    if PdfReader is not None:
+        reader = PdfReader(file_path)
+        for page in reader.pages:
+            texts.append(page.extract_text() or "")
+        return texts
+    logger.warning("缺少 PDF 解析库，将返回空文本: %s", file_path)
+    return texts
+
+
 def load_ocr_docs(keyword: str = "") -> List[dict]:
     cursor = conn.cursor()
     if keyword:
@@ -128,11 +155,11 @@ if current_agent == "📄 文档管理":
             file_path.write_bytes(uploaded.getvalue())
             blocks = ocr_service.run(str(file_path))
             if not blocks and uploaded.name.lower().endswith(".pdf"):
-                doc = fitz.open(str(file_path))
-                blocks = []
-                for page_index, page in enumerate(doc):
-                    text = page.get_text()
-                    blocks.append(type("FallbackBlock", (), {"page": page_index, "bbox": [0, 0, 0, 0], "text": text}))
+                page_texts = _extract_pdf_pages(str(file_path))
+                blocks = [
+                    SimpleNamespace(page=idx, bbox=[0, 0, 0, 0], text=text)
+                    for idx, text in enumerate(page_texts)
+                ]
             pages = max([block.page for block in blocks], default=0) + 1 if blocks else 1
             text_chunks = []
             metadatas = []
@@ -168,6 +195,12 @@ if current_agent == "📄 文档管理":
                     file_path = uploads_dir / doc["filename"]
                     if file_path.exists():
                         blocks = ocr_service.run(str(file_path))
+                        if not blocks and doc["filename"].lower().endswith(".pdf"):
+                            page_texts = _extract_pdf_pages(str(file_path))
+                            blocks = [
+                                SimpleNamespace(page=idx, bbox=[0, 0, 0, 0], text=text)
+                                for idx, text in enumerate(page_texts)
+                            ]
                         text_chunks = []
                         metadatas = []
                         for idx, block in enumerate(blocks):
