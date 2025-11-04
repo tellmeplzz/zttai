@@ -204,6 +204,7 @@ class MonitorService:
         status: str,
         reviewer: Optional[str] = None,
     ) -> int:
+        """Persist an annotation result and synchronize queue status."""
         cursor = self.conn.cursor()
         reviewed_at: Optional[str] = None
         if status != "待审核" and reviewer:
@@ -238,9 +239,6 @@ class MonitorService:
         self.update_hit_status(hit_id, status)
         logger.info("样本 %s 标注完成，状态=%s", hit_id, status)
         return annotation_id
-
-
-__all__ = ["MonitorService"]
 
 
 __all__ = ["MonitorService"]
